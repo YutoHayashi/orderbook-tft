@@ -1,0 +1,9 @@
+python-dotenv
+lightning
+numpy
+pandas
+pytorch-forecasting
+scikit-learn
+torch
+torchvision
+torchsummary
