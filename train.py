@@ -1,17 +1,16 @@
 import os
 import sys
-
 sys.path.append(os.path.join(os.path.dirname(__file__), 'src'))
 
 import argparse
 import json
-from dotenv import load_dotenv
 
+from dotenv import load_dotenv
 load_dotenv()
 
-from trainer import TFTTrainer
+from trainer import TFTTrainer, load_tft_model
 
-def parse_args():
+def parse_args() -> dict:
     parser = argparse.ArgumentParser(description="Train a machine learning model.")
     
     parser.add_argument('--preset', type=str, choices=['minimum', 'dev', 'prod'], required=False, default='dev', help='Preset configuration to use.')
@@ -24,6 +23,7 @@ def parse_args():
     parser.add_argument('--dropout', type=float, required=False, default=0.1, help='Dropout rate for the model.')
     parser.add_argument('--hidden_continuous_size', type=int, required=False, default=16, help='Hidden continuous size for the model.')
     parser.add_argument('--window_size', type=int, required=False, default=60, help='Window size for the model.')
+    parser.add_argument('--max_prediction_length', type=int, required=False, default=12, help='Maximum prediction length for the model.')
     parser.add_argument('--log_interval', type=int, required=False, default=10, help='Logging interval during training.')
     parser.add_argument('--mode', type=str, choices=['train_and_eval', 'train', 'eval'], required=False, default='train_and_eval', help='Mode: train or evaluate.')
     
@@ -40,7 +40,7 @@ def parse_args():
     
     return args
 
-def main():
+def main() -> None:
     args = parse_args()
     mode = args.get('mode')
     model_path = os.getenv('MODEL_PATH', 'models')
@@ -54,10 +54,9 @@ def main():
     
     if mode in ['eval', 'train_and_eval']:
         if trained_model is None:
-            trained_model = TFTTrainer.load_model(model_path)
+            trained_model = load_tft_model(model_path)
         
-        rmse, r2 = trainer.evaluate(trained_model)
-        print(f"Evaluation Results - RMSE: {rmse}, R2: {r2}")
+        trainer.evaluate(trained_model)
 
 if __name__ == "__main__":
     main()

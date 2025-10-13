@@ -1,54 +1,67 @@
 import os
 import sys
-
 sys.path.append(os.path.join(os.path.dirname(__file__), 'src'))
 
-from dotenv import load_dotenv
+from typing import List
 
+from dotenv import load_dotenv
 load_dotenv()
 
 import torch
 torch.set_float32_matmul_precision('high')
 
-from trainer import TFTTrainer
+from trainer import load_tft_model
 
-def predict(x):
+def predict(dataloader) -> List[torch.Tensor]:
     model_path = os.getenv('MODEL_PATH', 'models')
-    model = TFTTrainer.load_model(model_path)
-    model.eval()
+    tft = load_tft_model(model_path)
+    tft.eval()
     with torch.no_grad():
-        predictions = model.predict(x, mode="raw")
+        predictions = tft.predict(dataloader, mode='quantiles')
     return predictions
 
 if __name__ == "__main__":
-    import pandas as pd
     import numpy as np
+    import pandas as pd
     from pytorch_forecasting import TimeSeriesDataSet
     
+    from data_processor import prepare_dataframe
+    
     # Example usage
-    batch_size = 4
-    max_encoder_length = 60
-    max_prediction_length = 12
-    n_time = max_encoder_length + max_prediction_length
-
-    data = []
-    for t in range(n_time):
-        data.append({
-            "series_id": 0,
-            "time_idx": t,
-            "1period_log_return": np.float32(0),
-            "12period_log_return": np.float32(0),
-        })
-    df = pd.DataFrame(data)
+    batch_size = 1
     
     model_path = os.getenv('MODEL_PATH', 'models')
-    model = TFTTrainer.load_model(model_path)
-    hparams = model.hparams['dataset_parameters']
-
-    dataset = TimeSeriesDataSet.from_parameters(hparams, df, predict=True)
+    model = load_tft_model(model_path)
+    hparams = model.hparams
+    
+    dataset_parameters = hparams.get('dataset_parameters')
+    target = dataset_parameters.get('target')
+    max_encoder_length = dataset_parameters.get('max_encoder_length')
+    max_prediction_length = dataset_parameters.get('max_prediction_length')
+    time_varying_unknown_reals = dataset_parameters.get('time_varying_unknown_reals')
+    
+    df = pd.read_csv('csv/board_snapshots.csv')
+    df = prepare_dataframe(df)
+    df = df.filter(items=time_varying_unknown_reals)
+    df['time_idx'] = range(len(df))
+    df['series_id'] = 0
+    df = df[lambda x: x.time_idx > (x.time_idx.max() - max_encoder_length)]
+    
+    df = pd.concat([df, pd.DataFrame({
+        'time_idx': range(df['time_idx'].max() + 1, df['time_idx'].max() + 1 + max_prediction_length),
+        'series_id': 0,
+        **{col: np.float32(0) for col in time_varying_unknown_reals},
+        **{col: np.float32(0) for col in target}
+    })], ignore_index=True)
+    
+    print(f"Dataframe shape: {df.shape}")
+    print(df)
+    
+    dataset = TimeSeriesDataSet.from_parameters(dataset_parameters, df, predict=True)
+    print(f"Number of samples in the dataset: {len(dataset)}")
+    
     dataloader = dataset.to_dataloader(train=False, batch_size=batch_size, shuffle=False, num_workers=0)
-
+    
     predictions = predict(dataloader)
-
-    print("predictions:", predictions.prediction[0])
-    # print("predictions shape:", preds)
+    print(f"Predictions shape: {predictions[0].shape} (batch_size, prediction_length, num_quantiles)")
+    print(predictions)

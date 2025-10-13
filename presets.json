@@ -1,20 +1,54 @@
 {
-    "minimum": {
-        "epochs": 1,
-        "batch_size": 8,
-        "learning_rate": 0.1,
-        "hidden_size": 16
-    },
-    "dev": {
-        "epochs": 5,
-        "batch_size": 16,
-        "learning_rate": 0.03,
-        "hidden_size": 32
-    },
-    "prod": {
-        "epochs": 50,
-        "batch_size": 32,
-        "learning_rate": 0.03,
-        "hidden_size": 64
-    }
+  "minimum": {
+    "epochs": 1,
+    "batch_size": 8,
+    "learning_rate": 0.1,
+    "hidden_size": 16,
+    "feature_columns": [
+      "mid_price",
+      "best_bid_price",
+      "best_ask_price",
+      "mid_price_rolling_mean_5",
+      "spread_volatility_5"
+    ],
+    "quantiles": [0.1, 0.5, 0.9]
+  },
+  "dev": {
+    "epochs": 5,
+    "batch_size": 16,
+    "learning_rate": 0.03,
+    "hidden_size": 32,
+    "feature_columns": [
+      "trend_strength_20",
+      "log_return_20",
+      "return_20",
+      "pca_2",
+      "mid_price_rolling_mean_5",
+      "best_bid_price",
+      "log_mid_price",
+      "mid_price",
+      "best_ask_price",
+      "price_deviation_20"
+    ],
+    "quantiles": [0.01, 0.5, 0.9]
+  },
+  "prod": {
+    "epochs": 30,
+    "batch_size": 32,
+    "learning_rate": 0.03,
+    "hidden_size": 64,
+    "feature_columns": [
+      "trend_strength_20",
+      "log_return_20",
+      "return_20",
+      "pca_2",
+      "mid_price_rolling_mean_5",
+      "best_bid_price",
+      "log_mid_price",
+      "mid_price",
+      "best_ask_price",
+      "price_deviation_20"
+    ],
+    "quantiles": [0.01, 0.5, 0.9]
+  }
 }

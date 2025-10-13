@@ -1,14 +1,15 @@
-import argparse
 import json
-import pandas as pd
-import numpy as np
-from scipy import stats
-from sklearn.decomposition import PCA
-from sklearn.preprocessing import StandardScaler
 import warnings
 warnings.filterwarnings('ignore')
 
-correct_label_names = ['1period_log_return', '12period_log_return']
+import pandas as pd
+import numpy as np
+from scipy import stats
+
+from sklearn.decomposition import PCA
+from sklearn.preprocessing import StandardScaler
+
+target_label_names = ['mid_price', 'spread']
 
 def validate_dataframe(df: pd.DataFrame) -> bool:
     required_columns = ['timestamp', 'json_data']
@@ -17,13 +18,8 @@ def validate_dataframe(df: pd.DataFrame) -> bool:
     for col in required_columns:
         if col not in df.columns:
             raise ValueError(f"Missing required column: {col}")
-    print("Dataframe validation passed.\n")
+    print("Dataframe validation passed.")
     return True
-    
-def extract_correct_labels(df: pd.DataFrame) -> pd.DataFrame:
-    df['1period_log_return'] = df['mid_price'].pct_change().shift(-1) * 10000  # bps
-    df['12period_log_return'] = df['mid_price'].pct_change(periods=12).shift(-12) * 10000  # bps
-    return df
 
 def extract_base_features(df: pd.DataFrame) -> pd.DataFrame:
     df['best_ask_price'] = df['asks'].apply(lambda x: x[0].get('price'))
@@ -31,7 +27,6 @@ def extract_base_features(df: pd.DataFrame) -> pd.DataFrame:
     df['best_ask_size'] = df['asks'].apply(lambda x: x[0].get('size'))
     df['best_bid_size'] = df['bids'].apply(lambda x: x[0].get('size'))
     df['spread'] = df['best_ask_price'] - df['best_bid_price']
-    df['spread_diff'] = df['spread'].diff()
     return df
     
 def extract_depth_features(df: pd.DataFrame, depth_level: int = 10) -> pd.DataFrame:
@@ -255,7 +250,7 @@ def extract_ml_based_features(df: pd.DataFrame) -> pd.DataFrame:
     # Feature selection (numeric columns only, excluding rows with NaN)
     numeric_cols = df.select_dtypes(include=[np.number]).columns
     feature_cols = [col for col in numeric_cols 
-                    if col not in ['asks', 'bids'] + correct_label_names]
+                    if col not in ['asks', 'bids'] + target_label_names]
         
     feature_data = df[feature_cols].dropna()
     
@@ -324,10 +319,10 @@ def prepare_dataframe(df: pd.DataFrame) -> pd.DataFrame:
     df['bids'] = df['json_data'].apply(lambda x: x.get('bids'))
     df = df.drop(columns=['timestamp', 'json_data'])
     
-    df = extract_correct_labels(df)
     df = extract_base_features(df)
     df = extract_depth_features(df, depth_level=10)
     df = extract_technical_indicators(df)
+    # Additional feature extraction functions
     df = extract_advanced_price_features(df)
     df = extract_orderbook_imbalance_features(df)
     df = extract_microstructure_features(df)

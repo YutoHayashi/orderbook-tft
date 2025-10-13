@@ -2,27 +2,30 @@ import os
 from typing import List
 
 import pandas as pd
-import torch
 
+import torch
 torch.set_float32_matmul_precision('high')
 
 from pytorch_forecasting import TemporalFusionTransformer, TimeSeriesDataSet
 from pytorch_forecasting.metrics import MultiLoss, QuantileLoss
+from pytorch_forecasting.data import MultiNormalizer, GroupNormalizer
 
 from lightning.pytorch import Trainer
 from lightning.pytorch.callbacks import EarlyStopping, ModelCheckpoint
 
-from data_processor import correct_label_names, prepare_dataframe
+from data_processor import target_label_names, prepare_dataframe
 
 def create_datasets(df: pd.DataFrame,
                     feature_columns: List[str],
                     target_columns: List[str],
                     max_encoder_length: int,
-                    max_prediction_length: int) -> tuple[TimeSeriesDataSet, TimeSeriesDataSet]:
+                    max_prediction_length: int) -> tuple[TimeSeriesDataSet, TimeSeriesDataSet, TimeSeriesDataSet]:
     df = df.filter(items=feature_columns + target_columns)
     df['time_idx'] = range(len(df))
     df['series_id'] = 0
-    train_cutoff = int(df['time_idx'].max() * 0.9)
+    
+    train_cutoff = int(df['time_idx'].max() * 0.6)
+    validation_cutoff = int(df['time_idx'].max() * 0.8)
     
     training = TimeSeriesDataSet(
         df[lambda x: x.time_idx <= train_cutoff],
@@ -32,36 +35,61 @@ def create_datasets(df: pd.DataFrame,
         max_encoder_length=max_encoder_length,
         min_prediction_length=1,
         max_prediction_length=max_prediction_length,
+        time_varying_known_reals=['time_idx'],
         time_varying_unknown_reals=target_columns + feature_columns,
+        target_normalizer=MultiNormalizer([GroupNormalizer(groups=['series_id']) for _ in target_columns]),
         add_relative_time_idx=True,
         add_target_scales=True,
-        add_encoder_length=True,
-        allow_missing_timesteps=True
+        add_encoder_length=True
     )
     
     validation = TimeSeriesDataSet.from_dataset(
         training,
-        df[lambda x: x.time_idx > train_cutoff],
+        df[lambda x: (train_cutoff < x.time_idx) & (x.time_idx <= validation_cutoff)],
         predict=False,
         stop_randomization=True
     )
     
+    testing = TimeSeriesDataSet.from_dataset(
+        training,
+        df[lambda x: x.time_idx > validation_cutoff]
+    )
+    
     print(f"Number of training samples: {len(training)}")
     print(f"Number of validation samples: {len(validation)}")
+    print(f"Number of testing samples: {len(testing)}")
     
-    return training, validation
+    return training, validation, testing
+
+def load_tft_model(model_path: str) -> TemporalFusionTransformer:
+    print("Loading the best model from checkpoint...")
+    checkpoint_dir = os.path.join(os.path.dirname(__file__), model_path)
+    checkpoint_files = [f for f in os.listdir(checkpoint_dir) if f.endswith('.ckpt')]
+    if not checkpoint_files:
+        raise FileNotFoundError("No checkpoint files found in the specified output path.")
+    
+    latest_checkpoint = max(checkpoint_files, key=lambda f: os.path.getctime(os.path.join(checkpoint_dir, f)))
+    checkpoint_path = os.path.join(checkpoint_dir, latest_checkpoint)
+    
+    model = TemporalFusionTransformer.load_from_checkpoint(checkpoint_path, map_location='cuda' if torch.cuda.is_available() else 'cpu')
+    print(f"Loaded model from {checkpoint_path}")
+    
+    return model
 
 class TFTTrainer:
     def __init__(self,
                  data_path: str,
+                 feature_columns: List[str],
                  epochs: int = 10,
                  batch_size: int = 32,
                  learning_rate: float = 0.03,
                  hidden_size: int = 64,
+                 quantiles = [0.1, 0.5, 0.9],
                  attention_head_size: int = 4,
                  dropout: float = 0.1,
                  hidden_continuous_size: int = 16,
                  window_size: int = 60,
+                 max_prediction_length: int = 12,
                  log_interval: int = 10,
                  **kwargs):
         self.data_path = data_path
@@ -69,32 +97,34 @@ class TFTTrainer:
         self.batch_size = batch_size
         self.learning_rate = learning_rate
         self.hidden_size = hidden_size
+        self.quantiles = quantiles
         self.attention_head_size = attention_head_size
         self.dropout = dropout
         self.hidden_continuous_size = hidden_continuous_size
         self.window_size = window_size
+        self.max_prediction_length = max_prediction_length
         self.log_interval = log_interval
         self.model_path = os.getenv('MODEL_PATH')
         
         self.df = pd.read_csv(data_path)
         self.df = prepare_dataframe(self.df)
         
-        self.feature_columns = ['trend_strength_20', 'log_return_20', 'return_20', 'pca_2', 'mid_price_rolling_mean_5', 'best_bid_price', 'log_mid_price', 'mid_price', 'best_ask_price', 'price_deviation_20']
-        self.target_columns = correct_label_names
+        self.feature_columns = feature_columns
+        self.target_columns = target_label_names
         
-        self.training_dataset, self.validation_dataset = create_datasets(
+        self.training_dataset, self.validation_dataset, self.testing_dataset = create_datasets(
             self.df,
             feature_columns=self.feature_columns,
             target_columns=self.target_columns,
             max_encoder_length=self.window_size,
-            max_prediction_length=12
+            max_prediction_length=self.max_prediction_length
         )
     
     def train(self) -> TemporalFusionTransformer:
         print("Starting training...")
         
         train_dataloader = self.training_dataset.to_dataloader(train=True, batch_size=self.batch_size, num_workers=0)
-        val_dataloader = self.validation_dataset.to_dataloader(train=False, batch_size=self.batch_size * 2, num_workers=0)
+        val_dataloader = self.validation_dataset.to_dataloader(train=False, batch_size=self.batch_size, num_workers=0)
         
         tft = TemporalFusionTransformer.from_dataset(
             self.training_dataset,
@@ -103,10 +133,10 @@ class TFTTrainer:
             attention_head_size=self.attention_head_size,
             dropout=self.dropout,
             hidden_continuous_size=self.hidden_continuous_size,
-            output_size=[len(self.feature_columns) for _ in range(len(self.target_columns))],
-            loss=MultiLoss([QuantileLoss() for _ in range(len(self.target_columns))]),
+            output_size=[len(self.quantiles) for _ in self.target_columns],
+            loss=MultiLoss([QuantileLoss(quantiles=self.quantiles) for _ in self.target_columns]),
             log_interval=self.log_interval,
-            reduce_on_plateau_patience=5,
+            reduce_on_plateau_patience=3,
             optimizer="Adam",
         )
         print(f"Number of parameters in network: {tft.size()/1e3:.1f}k")
@@ -141,18 +171,9 @@ class TFTTrainer:
         
         return tft
     
-    def evaluate(self, model: TemporalFusionTransformer) -> tuple[float, float]:
-        """
-        Evaluate the trained TemporalFusionTransformer model using RMSE and R2 score.
-        
-        Returns:
-            tuple[float, float]: RMSE and R2 score
-        """
+    def evaluate(self, model: TemporalFusionTransformer) -> None:
         print("Evaluating model...")
         model.eval()
-        
-        # Use Lightning Trainer to compute test metrics
-        from lightning.pytorch import Trainer
         
         trainer = Trainer(
             logger=False,
@@ -160,48 +181,11 @@ class TFTTrainer:
             devices=1 if torch.cuda.is_available() else "auto",
         )
         
-        val_dataloader = self.validation_dataset.to_dataloader(train=False, batch_size=self.batch_size, num_workers=0)
+        test_dataloader = self.testing_dataset.to_dataloader(train=False, batch_size=self.batch_size, num_workers=0)
         
-        # Use Lightning's test method which handles evaluation properly
-        results = trainer.test(model, dataloaders=val_dataloader, verbose=False)
+        results = trainer.test(model, dataloaders=test_dataloader, verbose=False)
         
-        test_loss = float('inf')
-        if results and len(results) > 0:
-            test_result = results[0]
-            # Extract loss if available
-            test_loss = test_result.get('test_loss', float('inf'))
-            print(f"Test Loss from Lightning: {test_loss:.6f}")
-        
-        # For now, use test_loss as RMSE approximation and calculate a simple R2 approximation
-        # This is not perfect but provides some evaluation metrics
-        rmse = test_loss  # Test loss is often MSE or similar, so we use it as RMSE approximation
-        
-        # Calculate a simple baseline R2 by comparing against a naive prediction
-        # This is an approximation since we don't have access to individual predictions
-        if test_loss < 10.0:  # Reasonable loss values
-            r2 = max(0.0, 1.0 - (test_loss / 10.0))  # Rough R2 approximation
-        else:
-            r2 = 0.0
-        
-        print(f"Evaluation Results:")
-        print(f"Test Loss (used as RMSE approximation): {rmse:.6f}")
-        print(f"Estimated R2 Score: {r2:.6f}")
-        print(f"Note: These are approximations based on test loss. For exact RMSE/R2, individual predictions would be needed.")
-        
-        return rmse, r2
-    
-    @classmethod
-    def load_model(cls, model_path: str) -> TemporalFusionTransformer:
-        print("Loading the best model from checkpoint...")
-        checkpoint_dir = os.path.join(os.path.dirname(__file__), model_path)
-        checkpoint_files = [f for f in os.listdir(checkpoint_dir) if f.endswith('.ckpt')]
-        if not checkpoint_files:
-            raise FileNotFoundError("No checkpoint files found in the specified output path.")
-        
-        latest_checkpoint = max(checkpoint_files, key=lambda f: os.path.getctime(os.path.join(checkpoint_dir, f)))
-        checkpoint_path = os.path.join(checkpoint_dir, latest_checkpoint)
-        
-        model = TemporalFusionTransformer.load_from_checkpoint(checkpoint_path)
-        print(f"Loaded model from {checkpoint_path}")
-        
-        return model
+        print(f"===== Evaluation Results =====")
+        for test_name, result in results[0].items():
+            print(f"{test_name} results: {result}")
+        print(f"==============================")
