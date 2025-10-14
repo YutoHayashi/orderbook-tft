@@ -6,4 +6,3 @@ pytorch-forecasting
 scikit-learn
 torch
 torchvision
-torchsummary

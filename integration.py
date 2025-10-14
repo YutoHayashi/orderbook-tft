@@ -35,7 +35,6 @@ if __name__ == "__main__":
     hparams = model.hparams
     
     dataset_parameters = hparams.get('dataset_parameters')
-    target = dataset_parameters.get('target')
     max_encoder_length = dataset_parameters.get('max_encoder_length')
     max_prediction_length = dataset_parameters.get('max_prediction_length')
     time_varying_unknown_reals = dataset_parameters.get('time_varying_unknown_reals')
@@ -51,7 +50,6 @@ if __name__ == "__main__":
         'time_idx': range(df['time_idx'].max() + 1, df['time_idx'].max() + 1 + max_prediction_length),
         'series_id': 0,
         **{col: np.float32(0) for col in time_varying_unknown_reals},
-        **{col: np.float32(0) for col in target}
     })], ignore_index=True)
     
     print(f"Dataframe shape: {df.shape}")
