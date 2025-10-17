@@ -1,6 +1,5 @@
 import os
 import sys
-sys.path.append(os.path.join(os.path.dirname(__file__), 'src'))
 
 from typing import List
 
@@ -10,7 +9,7 @@ load_dotenv()
 import torch
 torch.set_float32_matmul_precision('high')
 
-from trainer import load_tft_model
+from src.trainer import load_tft_model
 
 def predict(dataloader) -> List[torch.Tensor]:
     model_path = os.getenv('MODEL_PATH', 'models')

@@ -16,11 +16,9 @@ from lightning.pytorch.callbacks import EarlyStopping, ModelCheckpoint
 from data_processor import target_label_names, prepare_dataframe
 
 def create_datasets(df: pd.DataFrame,
-                    feature_columns: List[str],
                     target_columns: List[str],
                     max_encoder_length: int,
                     max_prediction_length: int) -> tuple[TimeSeriesDataSet, TimeSeriesDataSet, TimeSeriesDataSet]:
-    df = df.filter(items=feature_columns + target_columns)
     df['time_idx'] = range(len(df))
     df['series_id'] = 0
     
@@ -36,7 +34,7 @@ def create_datasets(df: pd.DataFrame,
         min_prediction_length=1,
         max_prediction_length=max_prediction_length,
         time_varying_known_reals=['time_idx'],
-        time_varying_unknown_reals=target_columns + feature_columns,
+        time_varying_unknown_reals=df.columns.difference(['time_idx', 'series_id']).tolist(),
         target_normalizer=MultiNormalizer([GroupNormalizer(groups=['series_id']) for _ in target_columns]),
         add_relative_time_idx=True,
         add_target_scales=True,
@@ -79,7 +77,6 @@ def load_tft_model(model_path: str) -> TemporalFusionTransformer:
 class TFTTrainer:
     def __init__(self,
                  data_path: str,
-                 feature_columns: List[str],
                  epochs: int = 10,
                  batch_size: int = 32,
                  learning_rate: float = 0.03,
@@ -109,12 +106,10 @@ class TFTTrainer:
         self.df = pd.read_csv(data_path)
         self.df = prepare_dataframe(self.df)
         
-        self.feature_columns = feature_columns
         self.target_columns = target_label_names
         
         self.training_dataset, self.validation_dataset, self.testing_dataset = create_datasets(
             self.df,
-            feature_columns=self.feature_columns,
             target_columns=self.target_columns,
             max_encoder_length=self.window_size,
             max_prediction_length=self.max_prediction_length
