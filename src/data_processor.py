@@ -9,7 +9,7 @@ from orderbook_snapshot_autoencoder.integration import encode_snapshot
 
 target_label_names = ['mid_price', 'spread']
 
-def prepare_dataframe(df: pd.DataFrame) -> pd.DataFrame:
+def prepare_dataframe(df: pd.DataFrame, pca_components: int = None) -> pd.DataFrame:
     print("Preparing dataframe...")
     
     df['json_data'] = df['json_data'].apply(lambda x: json.loads(x) if isinstance(x, str) else x)
@@ -22,7 +22,7 @@ def prepare_dataframe(df: pd.DataFrame) -> pd.DataFrame:
     
     # エンコードされたスナップショット特徴量を取得
     print("Encoding snapshots...")
-    encoded_features = df['json_data'].apply(lambda x: encode_snapshot(x).numpy())
+    encoded_features = df['json_data'].apply(lambda x: encode_snapshot(x, pca_components).numpy())
     
     # エンコードされた特徴量をDataFrameの列として追加
     feature_dim = len(encoded_features.iloc[0])

@@ -8,7 +8,7 @@ import json
 from dotenv import load_dotenv
 load_dotenv()
 
-from trainer import TFTTrainer, load_tft_model
+from tft_trainer import TFTTrainer, load_tft_model
 
 def parse_args() -> dict:
     parser = argparse.ArgumentParser(description="Train a machine learning model.")

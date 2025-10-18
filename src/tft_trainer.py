@@ -87,6 +87,7 @@ class TFTTrainer:
                  hidden_continuous_size: int = 16,
                  window_size: int = 60,
                  max_prediction_length: int = 12,
+                 pca_components: int = 40,
                  log_interval: int = 10,
                  **kwargs):
         self.data_path = data_path
@@ -100,11 +101,12 @@ class TFTTrainer:
         self.hidden_continuous_size = hidden_continuous_size
         self.window_size = window_size
         self.max_prediction_length = max_prediction_length
+        self.pca_components = pca_components
         self.log_interval = log_interval
         self.model_path = os.getenv('MODEL_PATH')
         
         self.df = pd.read_csv(data_path)
-        self.df = prepare_dataframe(self.df)
+        self.df = prepare_dataframe(self.df, pca_components=self.pca_components)
         
         self.target_columns = target_label_names
         
