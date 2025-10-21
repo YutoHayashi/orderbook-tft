@@ -1,7 +1,4 @@
 import os
-import sys
-sys.path.append(os.path.join(os.path.dirname(__file__), 'src'))
-
 from typing import List
 
 from dotenv import load_dotenv
@@ -12,9 +9,10 @@ torch.set_float32_matmul_precision('high')
 
 from tft_trainer import load_tft_model
 
+model_path = os.getenv('MODEL_PATH', 'models')
+tft = load_tft_model(model_path)
+
 def predict(dataloader) -> List[torch.Tensor]:
-    model_path = os.getenv('MODEL_PATH', 'models')
-    tft = load_tft_model(model_path)
     tft.eval()
     with torch.no_grad():
         predictions = tft.predict(dataloader, mode='quantiles')
@@ -30,9 +28,7 @@ if __name__ == "__main__":
     # Example usage
     batch_size = 1
     
-    model_path = os.getenv('MODEL_PATH', 'models')
-    model = load_tft_model(model_path)
-    hparams = model.hparams
+    hparams = tft.hparams
     
     dataset_parameters = hparams.get('dataset_parameters')
     max_encoder_length = dataset_parameters.get('max_encoder_length')
