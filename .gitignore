@@ -3,5 +3,4 @@
 .env
 csv/
 lightning_logs/
-src/models/
-orderbook_snapshot_autoencoder/
+models/
