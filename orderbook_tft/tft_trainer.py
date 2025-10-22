@@ -8,12 +8,13 @@ torch.set_float32_matmul_precision('high')
 
 from pytorch_forecasting import TemporalFusionTransformer, TimeSeriesDataSet
 from pytorch_forecasting.metrics import MultiLoss, QuantileLoss
-from pytorch_forecasting.data import MultiNormalizer, GroupNormalizer
+from pytorch_forecasting.data import MultiNormalizer, EncoderNormalizer
 
 from lightning.pytorch import Trainer
 from lightning.pytorch.callbacks import EarlyStopping, ModelCheckpoint
 
 from .data_processor import target_label_names, prepare_dataframe
+from .utils import rsme, mape, mae
 
 def create_datasets(df: pd.DataFrame,
                     target_columns: List[str],
@@ -34,8 +35,8 @@ def create_datasets(df: pd.DataFrame,
         min_prediction_length=1,
         max_prediction_length=max_prediction_length,
         time_varying_known_reals=['time_idx'],
-        time_varying_unknown_reals=df.columns.difference(['time_idx', 'series_id']).tolist(),
-        target_normalizer=MultiNormalizer([GroupNormalizer(groups=['series_id']) for _ in target_columns]),
+        time_varying_unknown_reals=target_columns,
+        target_normalizer=MultiNormalizer([EncoderNormalizer() for _ in target_columns]),
         add_relative_time_idx=True,
         add_target_scales=True,
         add_encoder_length=True
@@ -172,17 +173,30 @@ class TFTTrainer:
         print("Evaluating model...")
         model.eval()
         
-        trainer = Trainer(
-            logger=False,
-            accelerator="gpu" if torch.cuda.is_available() else "cpu",
-            devices=1 if torch.cuda.is_available() else "auto",
-        )
-        
         test_dataloader = self.testing_dataset.to_dataloader(train=False, batch_size=self.batch_size, num_workers=0)
         
-        results = trainer.test(model, dataloaders=test_dataloader, verbose=False)
+        output, x, index, decoder_length, y = model.predict(test_dataloader, mode="raw", return_x=True, return_y=True) # ('output', 'x', 'index', 'decoder_lengths', 'y')
+        y_tensors, _ = y
         
-        print(f"===== Evaluation Results =====")
-        for test_name, result in results[0].items():
-            print(f"{test_name} results: {result}")
-        print(f"==============================")
+        mid_true = y_tensors[0].detach().cpu().numpy()
+        spread_true = y_tensors[1].detach().cpu().numpy()
+        
+        predictions = output.prediction
+        mid_pred = predictions[0][:, : ,1].detach().cpu().numpy() # 中央値予測
+        spread_pred = predictions[1][:, :, 1].detach().cpu().numpy() # 中央値予測
+        
+        mid_rsme = rsme(mid_true, mid_pred)
+        mid_mae = mae(mid_true, mid_pred)
+        mid_mape = mape(mid_true, mid_pred)
+        spread_rsme = rsme(spread_true, spread_pred)
+        spread_mae = mae(spread_true, spread_pred)
+        spread_mape = mape(spread_true, spread_pred)
+        
+        print("===== Evaluation Results =====")
+        print(f"mid_price RSME:  {mid_rsme:.4f}")
+        print(f"mid_price MAE:  {mid_mae:.4f}")
+        print(f"mid_price MAPE: {mid_mape:.2f}%")
+        print(f"spread RSME:  {spread_rsme:.4f}")
+        print(f"spread MAE:  {spread_mae:.4f}")
+        print(f"spread MAPE: {spread_mape:.2f}%")
+        print("==============================")
