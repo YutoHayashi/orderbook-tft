@@ -30,7 +30,7 @@ def parse_args() -> dict:
     
     args = parser.parse_args()
     
-    with resources.open_text("orderbook_snapshot_autoencoder", "presets.json") as f:
+    with resources.open_text("orderbook_tft", "presets.json") as f:
         preset = json.load(f).get(args.preset)
     
     args = {**preset, **{k: v for k, v in vars(args).items() if v is not None}}
