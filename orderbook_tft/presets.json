@@ -2,25 +2,22 @@
   "minimum": {
     "epochs": 1,
     "batch_size": 8,
-    "learning_rate": 0.1,
+    "learning_rate": 0.01,
     "hidden_size": 16,
-    "pca_components": 40,
     "quantiles": [0.1, 0.5, 0.9]
   },
   "dev": {
     "epochs": 5,
     "batch_size": 16,
-    "learning_rate": 0.03,
+    "learning_rate": 0.005,
     "hidden_size": 32,
-    "pca_components": 40,
     "quantiles": [0.01, 0.5, 0.9]
   },
   "prod": {
     "epochs": 30,
     "batch_size": 32,
-    "learning_rate": 0.01,
-    "hidden_size": 64,
-    "pca_components": 40,
+    "learning_rate": 0.005,
+    "hidden_size": 128,
     "quantiles": [0.01, 0.5, 0.9]
   }
 }

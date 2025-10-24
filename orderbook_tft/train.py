@@ -24,7 +24,6 @@ def parse_args() -> dict:
     parser.add_argument('--hidden_continuous_size', type=int, required=False, default=16, help='Hidden continuous size for the model.')
     parser.add_argument('--window_size', type=int, required=False, default=60, help='Window size for the model.')
     parser.add_argument('--max_prediction_length', type=int, required=False, default=12, help='Maximum prediction length for the model.')
-    parser.add_argument('--pca_components', type=int, required=False, help='Number of PCA components to use.')
     parser.add_argument('--log_interval', type=int, required=False, default=10, help='Logging interval during training.')
     parser.add_argument('--mode', type=str, choices=['train_and_eval', 'train', 'eval'], required=False, default='train_and_eval', help='Mode: train or evaluate.')
     
