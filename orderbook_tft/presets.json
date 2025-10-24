@@ -18,7 +18,7 @@
   "prod": {
     "epochs": 30,
     "batch_size": 32,
-    "learning_rate": 0.03,
+    "learning_rate": 0.01,
     "hidden_size": 64,
     "pca_components": 40,
     "quantiles": [0.01, 0.5, 0.9]
